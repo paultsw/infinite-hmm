@@ -1,7 +1,7 @@
 """
 Proof-of-concept implementation of an infinite Hidden Markov Model.
 
-[----- TODO: provide more information on what these things are here -----]
+(TODO: provide more information on what these things are here)
 
 References:
 * "The Infinite Hidden Markov Model", M. Beal, Z. Ghahramani, C. Rasmussen
@@ -12,6 +12,7 @@ import scipy.stats as stats
 from collections import defaultdict
 
 
+# - - - - - Model Code
 class Matrix(object):
     """
     A matrix of mutable size, used to track counts between nodes in state-transition/emissions
@@ -187,6 +188,7 @@ class InfiniteHMM(object):
         return (states, observations)
 
 
+# - - - - - Inference Code
 class BeamSampler(object):
     """
     Beam sampling, for inference of hidden sequence on an infinite HMM given an emission sequence.
@@ -214,9 +216,9 @@ class BeamSampler(object):
 class GibbsSampler(object):
     """
     Gibbs sampling for inference of hidden sequence on an infinite HMM given an emission sequence.
-    
-    N.B.: this sampler is deprecated in favor of the Beam sampler, which is shown to be more efficient
-    in a paper referenced above.
+
+    N.B.: this sampler is deprecated in favor of the Beam sampler, which is shown to typically be
+    faster/more efficient in the second paper referenced above.
     """
     def __init__(self, ihmm):
         """TODO"""
@@ -229,7 +231,8 @@ class GibbsSampler(object):
 
 class ParticleFilter(object):
     """
-    Particle-filtering class that computes likelihoods for sequences of observations.
+    Particle-filtering class that computes likelihoods for sequences of observations, given an iHMM.
+    This does not change the internal parameters of the iHMM.
     """
     def __init__(self, ihmm):
         """TODO"""
@@ -238,3 +241,18 @@ class ParticleFilter(object):
     def likelihood(self, observations):
         """Return likelihood of observations given an infinite HMM."""
         return None # TODO
+
+
+# - - - - - Training Code
+def train_ihmm(states, obs, ihmm, n_epochs):
+    """
+    Return the best hyperparameters (t_alpha, t_beta, t_gamma, e_beta, e_gamma) for an iHMM
+    given a sequence of states and their corresponding observations.
+
+    This function is bayesian; all hyperparameters have a vague Gamma-distributed prior and
+    the posteriors follow the results in section 4.2 of the paper.
+
+    # 
+    """
+    # ...
+    return None # TODO
