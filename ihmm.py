@@ -1,7 +1,8 @@
 """
 Proof-of-concept implementation of an infinite Hidden Markov Model.
 
-(TODO: provide more information on what these things are here)
+This file contains all classes needed to build an infinite HMM; for inference and training code, see
+`samplers.py`.
 
 References:
 * "The Infinite Hidden Markov Model", M. Beal, Z. Ghahramani, C. Rasmussen
@@ -12,7 +13,6 @@ import scipy.stats as stats
 from collections import defaultdict
 
 
-# - - - - - Model Code
 class Matrix(object):
     """
     A matrix of mutable size, used to track counts between nodes in state-transition/emissions
@@ -48,12 +48,11 @@ class Matrix(object):
             return [self.count_table[(r,col)] for r in self.__parse_slice(row, self.max_rows)]
         # row is integer, col is slice:
         elif (not isinstance(row,slice)) and isinstance(col,slice):
-            return [self.count_table(row,c) for c in self.__parse_slice(col, self.max_cols)]
+            return [self.count_table[(row,c)] for c in self.__parse_slice(col, self.max_cols)]
         # both row and col are slices:
         elif isinstance(row,slice) and isinstance(col,slice):
             return [[self.count_table[(r, c)] for c in self.__parse_slice(col, self.max_cols)]
-                    for r in self.__parse_slice(row, self.max_rows)]
-                    
+                    for r in self.__parse_slice(row, self.max_rows)]                    
         # raise exception if pair is of invalid type:
         else:
             raise Exception("[Matrix.__getitem__] key of type {} not recognized".format(type(pair)))
@@ -67,38 +66,66 @@ class Matrix(object):
         return range(start,stop)
 
     def __setitem__(self, pair, val):
-        self.max_rows = max(pair[0], self.max_rows)
-        self.max_cols = max(pair[1], self.max_cols)
+        self.max_rows = max(pair[0]+1, self.max_rows)
+        self.max_cols = max(pair[1]+1, self.max_cols)
         self.count_table[pair] = val
+
+    def numpy(self):
+        """Return underlying matrix, in NumPy format."""
+        return np.array(self[0:self.max_rows, 0:self.max_cols])
+
+    def __repr__(self):
+        """Format as string for printing."""
+        return repr(self.numpy())
+
+    @property
+    def shape(self):
+        """Return dimensions so far."""
+        return (self.max_rows, self.max_cols)
 
 
 class HierarchicalDirichletProcess(object):
-    """Implementation of a 2-level hierarchical dirichlet process (HDP) for Infinite HMM state transitions/emissions."""
+    """
+    Implementation of a 2-level hierarchical dirichlet process (HDP) for Infinite HMM state transitions/emissions.
+
+    States are zero-indexed, i.e. the first state is `0`.
+    """
     def __init__(self, alpha, beta, gamma):
-        """        
+        """
         * alpha: float; self-transition hyperparameter.
         * beta: float; innovation parameter that decides how probable the oracle DP is.
         * gamma: float; new-state pseudocount parameter for the oracle DP.
         """
+        # input checks:
+        assert (alpha >= 0.), "[HierarchicalDirichletProcess/__init__] `alpha` must be nonnegative"
+        assert (beta >= 0.), "[HierarchicalDirichletProcess/__init__] `beta` must be nonnegative"
+        assert (gamma >= 0.), "[HierarchicalDirichletProcess/__init__] `gamma` must be nonnegative"
+        # static attributes:
         self.alpha = alpha
         self.beta = beta
         self.gamma = gamma
-        self.num_states = 0 # keeps track of number of states visited so far
-        self.base_counts = Matrix()
-        self.oracle_counts = Matrix() # there should only be one column in the oracle counts
+        # dynamic attributes:
+        self.seen_states = 1          # NB. this keeps track of number of states visited so far
+        self.base_counts = Matrix()   # NB. `base_counts[s,t]` records number of times we've performed s->t transition
+        self.oracle_counts = Matrix() # NB. there should only be one column in the oracle counts, i.e. it's vector-shaped
+        # initialize with full probability mass on first state:
+        self.base_counts[0,0] += 1
+        self.oracle_counts[0,0] += 1
 
     def sample(self, state):
         """
         Return a new state j given that we're currently in a state i.
         Running this method updates the underlying count tables (self.{base,oracle}_counts); use
         `HDP.probas(state)` to get the probability over all visited states `j`.
+
+        * state: int; the state we're currently in.
         """
-        # get probabilities for next state over all states observed so far, plus oracle DP in final index:
-        base_probas = self.probas(state)
+        # get probabilities for next state over all states observed so far, plus oracle proba in final index:
+        base_probas = self.base_probas(state)
         # sample one of the states (or oracle query):
         next_state = np.random.choice(range(len(base_probas)), p=base_probas)
         # update tables and return state if our choice is not oracle:
-        if next_state != base_probas.shape[0]:
+        if next_state < self.seen_states:
             self.base_counts[state,next_state] += 1
             return next_state
         # otherwise if we choose final state, sample from oracle (also updating count tables/num_states):
@@ -109,41 +136,47 @@ class HierarchicalDirichletProcess(object):
             self.base_counts[state,next_oracle_state] += 1
             self.oracle_counts[next_oracle_state,0] += 1
             # update num_states if new state seen:
-            if (next_oracle_state ==  oracle_probas.shape[0]):
-                self.num_states += 1
+            if next_oracle_state == (oracle_probas.shape[0]-1):
+                self.seen_states += 1
             # return:
             return next_oracle_state
 
-    def probas(self, state):
+    def base_probas(self, state):
         """
         Returns probability over all states `j` observed so far, given that we're in state `i`.
         Returns a 1d numpy array of type np.float of size `self.num_states+1`, with the final
         value representing the probability that we make a query to the oracle DP.
+        
+        Args:
+        * state: int; represents the state that we are in at the present moment.
         """
+        # if queried state is out of bounds, raise error:
+        assert (state < self.seen_states), "[Hierarchical Dirichlet Process/base_probas] `state` out of bounds"
         # raw counts from state `i` to each state `j` that we've already seen before:
-        # [[TODO: uncomment the first line once Matrix slicing is better-supported]]
-        #n_ijs = np.array(self.base_counts[state,0:self.num_states], dtype=np.float)
-        n_ijs = np.array([self.base_counts[state,j] for j in range(self.num_states)], dtype=np.float)
-        n_ijs[state] += self.alpha
+        n_ijs = np.array(self.base_counts[state,0:self.seen_states], dtype=np.float64)
         # convert to probabilities:
         denominator = np.reciprocal(np.sum(n_ijs) + self.beta + self.alpha)
         state_probas = n_ijs * denominator
+        state_probas[state] += self.alpha
         # compute leftover remaining probability mass (probability of oracle query):
         oracle_proba = self.beta * denominator
         # join together and return:
-        return np.concatenate((state_probas, [oracle_proba]), axis=0)
+        combined_probas = np.concatenate((state_probas, [oracle_proba]), axis=0)
+        return (combined_probas / combined_probas.sum())
 
     def oracle_probas(self):
         """
         Return an array of probabilities based on current configuration of `self.oracle_counts`.
         Returned 1d array of type np.float is of size `self.num_states+1`, representing probabiltiies
-        for returning an existing state, plus probabilities for returning 
+        for returning an existing state with an additional value at the end representing the probability
+        for transitioning to a new, unseen state.
         """
-        n_js = np.array([self.oracle_counts[j,0] for j in range(self.num_states)], dtype=np.float)
+        n_js = np.array(self.oracle_counts[:self.seen_states,0], dtype=np.float64)
         denominator = np.reciprocal(np.sum(n_js) + self.gamma)
         new_state_proba = self.gamma * denominator
         existing_state_probas = n_js * denominator
-        return np.concatenate((existing_state_probas, [new_state_probas]), axis=0)
+        combined_probas = np.concatenate((existing_state_probas, [new_state_proba]), axis=0)
+        return (combined_probas / combined_probas.sum())
 
 
 class InfiniteHMM(object):
@@ -185,74 +218,4 @@ class InfiniteHMM(object):
             sampled_obs = self.e_hdp.sample(sampled_state)
             states.append(sampled_state)
             observations.append(sampled_obs)
-        return (states, observations)
-
-
-# - - - - - Inference Code
-class BeamSampler(object):
-    """
-    Beam sampling, for inference of hidden sequence on an infinite HMM given an emission sequence.
-    """
-    def __init__(self, ihmm):
-        """
-        Args:
-        * ihmm: instance of InfiniteHMM.
-        * (...TBD...)
-        """
-        self.ihmm = ihmm
-        # TBD
-
-    def inference(self, observations):
-        """
-        Return the most likely sequence of states given an array of observations.
-        
-        Args:
-        * observations: a 1d np.array with dtype=float64 representing a sequence of
-        emissions from the infinite HMM.
-        """
-        return np.random.rand(observations.shape[0]) # FIX THIS --- TODO
-
-
-class GibbsSampler(object):
-    """
-    Gibbs sampling for inference of hidden sequence on an infinite HMM given an emission sequence.
-
-    N.B.: this sampler is deprecated in favor of the Beam sampler, which is shown to typically be
-    faster/more efficient in the second paper referenced above.
-    """
-    def __init__(self, ihmm):
-        """TODO"""
-        return None # TODO
-
-    def inference(self, observations):
-        """TODO"""
-        return None # TODO
-
-
-class ParticleFilter(object):
-    """
-    Particle-filtering class that computes likelihoods for sequences of observations, given an iHMM.
-    This does not change the internal parameters of the iHMM.
-    """
-    def __init__(self, ihmm):
-        """TODO"""
-        return None # TODO
-
-    def likelihood(self, observations):
-        """Return likelihood of observations given an infinite HMM."""
-        return None # TODO
-
-
-# - - - - - Training Code
-def train_ihmm(states, obs, ihmm, n_epochs):
-    """
-    Return the best hyperparameters (t_alpha, t_beta, t_gamma, e_beta, e_gamma) for an iHMM
-    given a sequence of states and their corresponding observations.
-
-    This function is bayesian; all hyperparameters have a vague Gamma-distributed prior and
-    the posteriors follow the results in section 4.2 of the paper.
-
-    # 
-    """
-    # ...
-    return None # TODO
+        return (np.array(states), np.array(observations))
