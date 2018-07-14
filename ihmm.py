@@ -97,27 +97,49 @@ class HierarchicalDirichletProcess(object):
 
     States are zero-indexed, i.e. the first state is `0`.
     """
-    def __init__(self, alpha, beta, gamma):
+    def __init__(self, alpha, beta, gamma, init_base=None, init_oracle=None):
         """
         * alpha: float; self-transition hyperparameter.
         * beta: float; innovation parameter that decides how probable the oracle DP is.
         * gamma: float; new-state pseudocount parameter for the oracle DP.
+        * init_base: initial counts for 
         """
         # input checks:
         assert (alpha >= 0.), "[HierarchicalDirichletProcess/__init__] `alpha` must be nonnegative"
         assert (beta >= 0.), "[HierarchicalDirichletProcess/__init__] `beta` must be nonnegative"
         assert (gamma >= 0.), "[HierarchicalDirichletProcess/__init__] `gamma` must be nonnegative"
-        # static attributes:
+        
+        self.alpha = None
+        self.beta = None
+        self.gamma = None
+        self.seen_states = None
+        self.base_counts = None
+        self.oracle_counts = None
+
+        self.reset_params(alpha, beta, gamma)
+        self.reset_mats(init_base, init_oracle)
+
+    def reset_params(self, alpha, beta, gamma):
+        """Reset hyperparameters to new values."""
         self.alpha = alpha
         self.beta = beta
         self.gamma = gamma
-        # dynamic attributes:
-        self.seen_states = 1          # NB. this keeps track of number of states visited so far
-        self.base_counts = Matrix()   # NB. `base_counts[s,t]` records number of times we've performed s->t transition
-        self.oracle_counts = Matrix() # NB. there should only be one column in the oracle counts, i.e. it's vector-shaped
-        # initialize with full probability mass on first state:
-        self.base_counts[0,0] += 1
-        self.oracle_counts[0,0] += 1
+
+    def reset_mats(self, init_base=None, init_oracle=None):
+        """Reset counts matrices to fresh values."""
+        if init_base is None:
+            self.seen_states = 1          # NB. this keeps track of number of states visited so far
+            self.base_counts = Matrix()   # NB. `base_counts[s,t]` records number of times we've performed s->t transition
+            self.base_counts[0,0] += 1
+        else:
+            self.seen_states = max(init_base.shape[0], init_base.shape[1])
+            self.base_counts = Matrix(init_base)
+        if init_oracle is None:
+            self.oracle_counts = Matrix() # NB. there should only be one column in the oracle counts, i.e. it's vector-shaped
+            # initialize with full probability mass on first state:
+            self.oracle_counts[0,0] += 1
+        else:
+            self.oracle_counts = Matrix(init_oracle)
 
     def sample(self, state):
         """
@@ -213,6 +235,15 @@ class InfiniteHMM(object):
         self.e_beta = e_beta
         self.e_gamma = e_gamma
         self.e_hdp = HierarchicalDirichletProcess(0., e_beta, e_gamma) # alpha clamped to 0.0
+
+    def reset_params(self, t_alpha, t_beta, t_gamma, e_beta, e_gamma):
+        """Reset hyperparameters for HDPs."""
+        self.t_hdp.reset_params(t_alpha, t_beta, t_gamma)
+        self.e_hdp.reset_params(0., e_beta, e_gamma)
+
+    def reset_mats(self, t_base, t_oracle, e_base, e_oracle):
+        self.t_hdp.reset_mats(t_base, t_oracle)
+        self.e_hdp.reset_mats(e_base, e_oracle)
 
     def sample(self, num_steps):
         """Sample a random path through the state space and a corresponding sequence of observations."""

@@ -1,76 +1,97 @@
 """
-This file contains code for inference, training, and probability estimation for the iHMM
+This file contains code for inference, training, and likelihood estimation for the iHMM
 class defined in `ihmm.py`.
+
+(N.B.: Gibbs sampling is deprecated in favor of the beam sampling, which is shown to typically be
+faster/more efficient; hence we won't include this.)
+
+Many of the algorithms here take their influence from J. Van Gael's original MATLAB code, a fork of
+which can be found at: `https://github.com/tmills/ihmm`
 """
 import numpy as np
 import scipy.stats as stats
+from ihmm import InfiniteHMM
 
-
-# - - - - - Inference Code
-class BeamSampler(object):
+# ----- beam sampling helper functions:
+def _forward_slice_sample(states, transition_hdp):
     """
-    Beam sampling, for inference of hidden sequence on an infinite HMM given an emission sequence.
+    Args:
+    * states: sequence of integer states of length T.
+    * transition_hdp: a hierarchical dirichlet process (instance of HierarchicalDirichletProcess)
+      representing the transition probabilities from a given iHMM.
+    
+    Returns:
+    * u_slices: samples u_t ~ Uniform(0, transition_proba(s_{t-1} -> s_t)) for t=1:T.
     """
-    def __init__(self, ihmm):
-        """
-        Args:
-        * ihmm: instance of InfiniteHMM.
-        * (...TBD...)
-        """
-        self.ihmm = ihmm
-        # TBD
+    return None # TODO
 
-    def inference(self, observations):
-        """
-        Return the most likely sequence of states given an array of observations.
-        
-        Args:
-        * observations: a 1d np.array with dtype=float64 representing a sequence of
-        emissions from the infinite HMM.
-        """
-        return np.random.rand(observations.shape[0]) # FIX THIS --- TODO
-
-
-class GibbsSampler(object):
+def _backward_dynamic_resample(slices, obs):
     """
-    Gibbs sampling for inference of hidden sequence on an infinite HMM given an emission sequence.
+    Sample new state sequence given a set of observations and limiting slices.
 
-    N.B.: this sampler is deprecated in favor of the Beam sampler, which is shown to typically be
-    faster/more efficient in the second paper referenced above.
+    Args:
+    * slices: (...)
+    * obs: (...)
+    
+    Returns: a slice-sampled state sequence `states`.
     """
-    def __init__(self, ihmm):
-        """TODO"""
-        return None # TODO
+    return None # TODO
 
-    def inference(self, observations):
-        """TODO"""
-        return None # TODO
-
-
-class ParticleFilter(object):
+def _resample_parameters(ihmm, states):
     """
-    Particle-filtering class that computes likelihoods for sequences of observations, given an iHMM.
-    This does not change the internal parameters of the iHMM.
+    Resample the underlying parameters of an iHMM given a state sequence; updates the HMM parameters
+    in-place.
     """
-    def __init__(self, ihmm):
-        """TODO"""
-        return None # TODO
-
-    def likelihood(self, observations):
-        """Return likelihood of observations given an infinite HMM."""
-        return None # TODO
+    return None # TODO
 
 
-# - - - - - Training Code
-def train_ihmm(states, obs, ihmm, n_epochs):
+# ----- main beam-sampling function:
+def beam_sample(observations, init_states=None, init_ihmm=None):
     """
-    Return the best hyperparameters (t_alpha, t_beta, t_gamma, e_beta, e_gamma) for an iHMM
-    given a sequence of states and their corresponding observations.
+    Beam sampling, for inference of a hidden sequence on an infinite HMM given an emission sequence.
+    
+    Args:
+    * observations: a sequence of integers repesenting the output of an infinite HMM with unknown values.
+    * init_states
 
-    This function is bayesian; all hyperparameters have a vague Gamma-distributed prior and
-    the posteriors follow the results in section 4.2 of the paper.
-
-    # 
+    Returns: a tuple (states, ihmm) where:
+    * states: a sequence of integers representing the state sequence corresponding to `observations`.
+    * ihmm: the infinite hidden markov model (an instance of InfiniteHMM) that generated (observations, states).
     """
-    # ...
+    # --- 1. initialize an iHMM and an initial "hypothesis" hidden state sequence:
+    if (init_ihmm is None):
+        t_alpha0 = None # TODO
+        t_beta0 = None # TODO
+        t_gamma0 = None # TODO
+        e_beta0 = None # TODO
+        e_gamma0 = None # TODO
+        ihmm = InfiniteHMM(t_alpha, t_beta, t_gamma, e_beta, e_gamma)
+    else:
+        ihmm = init_ihmm
+    states = np.zeros(observations.shape) if (init_states is None) else init_states
+    
+    # --- 2. loop through observations:
+    while (condn): # FIGURE OUT CONDITION HERE
+        # forward pass to get slices:
+        uniform_slices = _forward_slice_sample(states, ihmm.t_hdp)
+        # backwards pass through finite slices:
+        states = _backward_dynamic_resample(uniform_slices, observations)
+        # update iHMM given new estimated state sequence:
+        _resample_parameters(ihmm, states)
+
+    return (states, ihmm)
+
+
+# ----- joint log-likelihood of an (observations, states) pair:
+def joint_log_likelihood(observations, states, ihmm):
+    """
+    Compute the log-likelihood of observing an (observations,states) pair coming from an infinite HMM
+    with specific transition & emission HDPs and hyperparameters.
+
+    Args:
+    * (...)
+    
+    Returns:
+    * (...)
+    """
     return None # TODO
