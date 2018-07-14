@@ -30,13 +30,20 @@ class Matrix(object):
     mat[i:i+5,j] # returns a list [ mat[i,j], mat[i+1,j], ..., mat[i+4,j] ]
     # (note that slices with steps != 1 (e.g. mat[i:i+5:2, j]) are not supported)
     """
-    def __init__(self):
+    def __init__(self, init_matrix=None):
         # count_table represents the counts themselves; keys are always tuples:
         self.count_table = defaultdict(int)
         # mutable; max row size seen so far:
         self.max_rows = 0
         # mutable; max column size seen so far:
         self.max_cols = 0
+        # if we want an initial matrix, update count_table and max_{rows,cols}:
+        if (init_matrix is not None):
+            assert (len(init_matrix.shape) == 2), "[Matrix] init_matrix must be a 2D numpy array"
+            self.max_rows = init_matrix.shape[0]
+            self.max_cols = init_matrix.shape[1]
+            for r,c in zip(range(init_matrix.shape[0]), range(init_matrix.shape[1])):
+                self.count_table[r,c] = init_matrix[r,c]
 
     def __getitem__(self, pair):
         row, col = pair
